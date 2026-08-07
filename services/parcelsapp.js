@@ -193,7 +193,17 @@ async function fetchInternationalTracking(trackingId) {
             } catch(e) {}
         }
 
-        browser = await puppeteer.launch(launchOptions);
+        try {
+            browser = await puppeteer.launch(launchOptions);
+        } catch (launchErr) {
+            if (launchErr.message && launchErr.message.includes('Could not find Chrome')) {
+                console.log('[ParcelsAppScraper] Chrome binary missing on cloud server. Auto-installing Chrome via npx...');
+                require('child_process').execSync('npx puppeteer browsers install chrome');
+                browser = await puppeteer.launch(launchOptions);
+            } else {
+                throw launchErr;
+            }
+        }
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
