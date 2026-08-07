@@ -1,13 +1,14 @@
 const { fetchBDPostTracking } = require('./bdpost');
 const { fetchInternationalTracking, mergeAndDeduplicateEvents } = require('./parcelsapp');
 const { fetchCainiaoTracking } = require('./cainiao');
+const { fetchMorningGlobalTracking } = require('./morning');
 
 const trackingCache = new Map();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes cache
 
 /**
  * Unified Mail Tracking Engine
- * Combines Pre-BD Customs (ParcelsApp + Cainiao Global) & Post-BD Customs (BD Post IPS)
+ * Combines Pre-BD Customs (ParcelsApp + Cainiao Global + Morning Global) & Post-BD Customs (BD Post IPS)
  * @param {string} trackingId 
  * @param {boolean} forceRefresh
  * @returns {Promise<Object>} Unified tracking report
@@ -30,17 +31,18 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
 
     console.log(`[UnifiedTracker] Initiating fresh tracking search for: ${cleanId}`);
 
-    // Execute pre-BD customs (ParcelsApp + Cainiao) and post-BD customs (BD Post) in parallel
-    const [intlResult, cainiaoResult, bdResultPrimary] = await Promise.all([
+    // Execute pre-BD customs (ParcelsApp + Cainiao + Morning Global) and post-BD customs (BD Post) in parallel
+    const [intlResult, cainiaoResult, morningResult, bdResultPrimary] = await Promise.all([
         fetchInternationalTracking(cleanId).catch(err => ({ found: false, error: err.message })),
         fetchCainiaoTracking(cleanId).catch(err => ({ found: false, error: err.message })),
+        fetchMorningGlobalTracking(cleanId).catch(err => ({ found: false, error: err.message })),
         fetchBDPostTracking(cleanId).catch(err => ({ found: false, error: err.message }))
     ]);
 
     let bdResult = bdResultPrimary;
 
-    // If international tracking found a secondary BD post tracking ID (e.g. RB...SG), query BD Post for that secondary ID too
-    const secondaryId = intlResult.destinationTrackingId || cainiaoResult.destinationTrackingId;
+    // If international tracking found a secondary BD post tracking ID (e.g. AP... / RB...SG), query BD Post for that secondary ID too
+    const secondaryId = intlResult.destinationTrackingId || cainiaoResult.destinationTrackingId || morningResult.destinationTrackingId;
     if (secondaryId && secondaryId !== cleanId) {
         console.log(`[UnifiedTracker] Secondary BD Tracking ID found: ${secondaryId}. Querying BD Post...`);
         const secondaryBdResult = await fetchBDPostTracking(secondaryId).catch(() => ({ found: false }));
@@ -83,7 +85,23 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
         });
     }
 
-    // 3. Add BD Post IPS events
+    // 3. Add Morning Global events
+    if (morningResult.found && morningResult.events) {
+        morningResult.events.forEach(ev => {
+            rawCombinedEvents.push({
+                date: ev.date,
+                status: ev.status,
+                location: ev.location,
+                details: ev.details || ev.status,
+                source: ev.source || 'Morning Global',
+                stage: 'PRE_CUSTOMS',
+                badgeClass: 'badge-info',
+                isLocal: false
+            });
+        });
+    }
+
+    // 4. Add BD Post IPS events
     if (bdResult.found && bdResult.events) {
         bdResult.events.forEach(ev => {
             let badge = 'badge-warning';
@@ -112,7 +130,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
         });
     }
 
-    // Merge and deduplicate across all 3 providers
+    // Merge and deduplicate across all providers
     const allCleanEvents = mergeAndDeduplicateEvents(rawCombinedEvents);
 
     // Determine package stage & status text
@@ -146,7 +164,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
             progressPercentage = 50;
             isBDCustomsCleared = true;
         }
-    } else if (cainiaoResult.found || intlResult.found) {
+    } else if (cainiaoResult.found || intlResult.found || morningResult.found) {
         currentStage = 'INTL_TRANSIT';
         progressPercentage = 35;
         const topEv = allCleanEvents.length > 0 ? allCleanEvents[0] : null;
@@ -160,12 +178,13 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
     return {
         success: true,
         trackingId: cleanId,
+        destinationTrackingId: secondaryId || null,
         currentStage,
         statusText,
         progressPercentage,
         isBDCustomsCleared,
         sources: {
-            international: (intlResult.found ? intlResult : (cainiaoResult.found ? cainiaoResult : { found: false, carrier: 'International Courier' })),
+            international: (intlResult.found ? intlResult : (cainiaoResult.found ? cainiaoResult : (morningResult.found ? morningResult : { found: false, carrier: 'International Courier' }))),
             bdPostIPS: {
                 found: bdResult.found,
                 location: bdResult.events && bdResult.events.length > 0 ? bdResult.events[0].location : 'Unknown'
