@@ -50,9 +50,16 @@ async function fetchCainiaoTracking(trackingId) {
             ]
         };
 
-        const execPath = findBrowserExecutable() || (typeof puppeteer.executablePath === 'function' ? puppeteer.executablePath() : null);
-        if (execPath && fs.existsSync(execPath)) {
-            launchOptions.executablePath = execPath;
+        const sysPath = findBrowserExecutable();
+        if (sysPath) {
+            launchOptions.executablePath = sysPath;
+        } else if (typeof puppeteer.executablePath === 'function') {
+            try {
+                const autoPath = puppeteer.executablePath();
+                if (autoPath && fs.existsSync(autoPath)) {
+                    launchOptions.executablePath = autoPath;
+                }
+            } catch(e) {}
         }
 
         browser = await puppeteer.launch(launchOptions);
