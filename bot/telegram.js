@@ -36,8 +36,8 @@ function formatTrackingResponse(data) {
 }
 
 function initTelegramBot(token) {
-    if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE') {
-        console.log('⚠️ [TelegramBot] No valid token provided. Bot disabled. Set TELEGRAM_BOT_TOKEN in .env');
+    if (!token || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE' || process.env.DISABLE_TELEGRAM_BOT === 'true') {
+        console.log('⚠️ [TelegramBot] Telegram bot disabled or no token provided.');
         return null;
     }
 
