@@ -1,5 +1,5 @@
 const { fetchBDPostTracking } = require('./bdpost');
-const { fetchInternationalTracking, mergeAndDeduplicateEvents } = require('./parcelsapp');
+const { mergeAndDeduplicateEvents } = require('./parcelsapp');
 const { fetchCainiaoTracking } = require('./cainiao');
 const { fetchMorningGlobalTracking } = require('./morning');
 
@@ -8,7 +8,7 @@ const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes cache
 
 /**
  * Unified Mail Tracking Engine
- * Combines Pre-BD Customs (ParcelsApp + Cainiao Global + Morning Global) & Post-BD Customs (BD Post IPS)
+ * Combines Pre-BD Customs (Cainiao Global + Morning Global) & Post-BD Customs (BD Post IPS)
  * @param {string} trackingId 
  * @param {boolean} forceRefresh
  * @returns {Promise<Object>} Unified tracking report
@@ -31,9 +31,8 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
 
     console.log(`[UnifiedTracker] Initiating fresh tracking search for: ${cleanId}`);
 
-    // Execute pre-BD customs (ParcelsApp + Cainiao + Morning Global) and post-BD customs (BD Post) in parallel
-    const [intlResult, cainiaoResult, morningResult, bdResultPrimary] = await Promise.all([
-        fetchInternationalTracking(cleanId).catch(err => ({ found: false, error: err.message })),
+    // Execute pre-BD customs (Cainiao + Morning Global) and post-BD customs (BD Post) in parallel
+    const [cainiaoResult, morningResult, bdResultPrimary] = await Promise.all([
         fetchCainiaoTracking(cleanId).catch(err => ({ found: false, error: err.message })),
         fetchMorningGlobalTracking(cleanId).catch(err => ({ found: false, error: err.message })),
         fetchBDPostTracking(cleanId).catch(err => ({ found: false, error: err.message }))
@@ -42,7 +41,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
     let bdResult = bdResultPrimary;
 
     // If international tracking found a secondary BD post tracking ID (e.g. AP... / RB...SG), query BD Post for that secondary ID too
-    const secondaryId = intlResult.destinationTrackingId || cainiaoResult.destinationTrackingId || morningResult.destinationTrackingId;
+    const secondaryId = cainiaoResult.destinationTrackingId || morningResult.destinationTrackingId;
     if (secondaryId && secondaryId !== cleanId) {
         console.log(`[UnifiedTracker] Secondary BD Tracking ID found: ${secondaryId}. Querying BD Post...`);
         const secondaryBdResult = await fetchBDPostTracking(secondaryId).catch(() => ({ found: false }));
@@ -73,23 +72,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
     const isMG = cleanId.endsWith('MG');
     if (isMG) addMorningEvents();
 
-    // 1. Add ParcelsApp events
-    if (intlResult.found && intlResult.events) {
-        intlResult.events.forEach(ev => {
-            rawCombinedEvents.push({
-                date: ev.date,
-                status: ev.status,
-                location: ev.location,
-                details: ev.details || ev.status,
-                source: ev.source || 'ParcelsApp',
-                stage: 'PRE_CUSTOMS',
-                badgeClass: 'badge-info',
-                isLocal: false
-            });
-        });
-    }
-
-    // 2. Add Cainiao Global events
+    // 1. Add Cainiao Global events
     if (cainiaoResult.found && cainiaoResult.events) {
         cainiaoResult.events.forEach(ev => {
             rawCombinedEvents.push({
@@ -185,16 +168,16 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
         progressPercentage,
         isBDCustomsCleared,
         sources: {
-            international: (intlResult.found ? intlResult : (cainiaoResult.found ? cainiaoResult : (morningResult.found ? morningResult : { found: false, carrier: 'International Courier' }))),
+            international: (isMG && morningResult.found ? morningResult : (cainiaoResult.found ? cainiaoResult : (morningResult.found ? morningResult : { found: false, carrier: 'International Courier' }))),
             bdPostIPS: {
                 found: bdResult.found,
                 location: bdResult.events && bdResult.events.length > 0 ? bdResult.events[0].location : 'Unknown'
             }
         },
-        intlSummary: intlResult.found ? {
-            carrier: intlResult.carrier,
-            source: intlResult.source,
-            eventsCount: intlResult.events ? intlResult.events.length : 0
+        intlSummary: isMG && morningResult.found ? {
+            carrier: morningResult.carrier,
+            source: morningResult.source,
+            eventsCount: morningResult.events ? morningResult.events.length : 0
         } : (cainiaoResult.found ? {
             carrier: cainiaoResult.carrier,
             source: cainiaoResult.source,
