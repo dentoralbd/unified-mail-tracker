@@ -44,6 +44,14 @@ function initTelegramBot(token) {
     const bot = new TelegramBot(token, { polling: true });
     console.log('🚀 [TelegramBot] Unified Mail Tracker Telegram Bot starting polling...');
 
+    // Handle polling errors gracefully (suppress noisy 409 Conflict logs from duplicate instances)
+    bot.on('polling_error', (error) => {
+        if (error && error.message && error.message.includes('409 Conflict')) {
+            return;
+        }
+        console.error('[TelegramBot] Polling notice:', error ? (error.message || error) : 'Unknown polling error');
+    });
+
     // Automatically configure Telegram Bot command menu buttons
     bot.setMyCommands([
         { command: 'track', description: 'Track package (e.g. /track UG251083645MV)' },
