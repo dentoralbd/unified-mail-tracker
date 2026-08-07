@@ -153,6 +153,13 @@ async function getUnifiedTracking(trackingId) {
         statusText,
         progressPercentage,
         isBDCustomsCleared,
+        sources: {
+            international: (intlResult.found ? intlResult : (cainiaoResult.found ? cainiaoResult : { found: false, carrier: 'International Courier' })),
+            bdPostIPS: {
+                found: bdResult.found,
+                location: bdResult.events && bdResult.events.length > 0 ? bdResult.events[0].location : 'Unknown'
+            }
+        },
         intlSummary: intlResult.found ? {
             carrier: intlResult.carrier,
             source: intlResult.source,

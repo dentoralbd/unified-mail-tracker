@@ -150,15 +150,18 @@ document.addEventListener('DOMContentLoaded', () => {
         resStatusSummary.innerText = data.statusText;
         resEventCount.innerText = data.eventsCount;
 
+        const intlSource = (data.sources && data.sources.international) || {};
+        const bdSource = (data.sources && data.sources.bdPostIPS) || {};
+
         // Source indicators
-        sourceParcelsAppStatus.innerText = data.sources.international.found
-            ? `Active (${data.sources.international.carrier})`
+        sourceParcelsAppStatus.innerText = intlSource.found
+            ? `Active (${intlSource.carrier || 'International Courier'})`
             : 'Pre-customs details pending';
         
         linkParcelsApp.href = `https://parcelsapp.com/en/tracking/${data.trackingId}`;
 
-        sourceBdPostStatus.innerText = data.sources.bdPostIPS.found
-            ? `Tracked in BD IPS (${data.sources.bdPostIPS.location})`
+        sourceBdPostStatus.innerText = bdSource.found
+            ? `Tracked in BD IPS (${bdSource.location || 'Bangladesh Post'})`
             : 'Not yet entered BD Customs / IPS system';
 
         // Update stepper progress

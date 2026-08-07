@@ -10,8 +10,11 @@ function formatTrackingResponse(data) {
     msg += `📊 <b>Stage:</b> ${data.currentStage.replace('_', ' ')}\n`;
     msg += `💡 <b>Status:</b> ${data.statusText}\n\n`;
 
-    msg += `🌐 <b>Pre-BD Customs (ParcelsApp):</b> ${data.sources.international.found ? '✅ Active' : '❓ Pending'}\n`;
-    msg += `🇧🇩 <b>Post-BD Customs (BD Post IPS):</b> ${data.sources.bdPostIPS.found ? '✅ Registered (' + data.sources.bdPostIPS.location + ')' : '⏳ Awaiting BD Customs Clearance'}\n\n`;
+    const intlSrc = (data.sources && data.sources.international) || {};
+    const bdSrc = (data.sources && data.sources.bdPostIPS) || {};
+
+    msg += `🌐 <b>Pre-BD Customs (ParcelsApp / Cainiao):</b> ${intlSrc.found ? '✅ Active' : '❓ Pending'}\n`;
+    msg += `🇧🇩 <b>Post-BD Customs (BD Post IPS):</b> ${bdSrc.found ? '✅ Registered (' + (bdSrc.location || 'DHAKA AIRPORT') + ')' : '⏳ Awaiting BD Customs Clearance'}\n\n`;
 
     msg += `📋 <b>Latest Updates (${data.eventsCount} events):</b>\n`;
     msg += `───────────────────────\n`;
