@@ -1,9 +1,10 @@
 const { fetchBDPostTracking } = require('./bdpost');
 const { fetchInternationalTracking, mergeAndDeduplicateEvents } = require('./parcelsapp');
+const { fetchCainiaoTracking } = require('./cainiao');
 
 /**
  * Unified Mail Tracking Engine
- * Cascades Pre-BD Customs (ParcelsApp) & Post-BD Customs (BD Post IPS)
+ * Combines Pre-BD Customs (ParcelsApp + Cainiao Global) & Post-BD Customs (BD Post IPS)
  * @param {string} trackingId 
  * @returns {Promise<Object>} Unified tracking report
  */
@@ -18,26 +19,28 @@ async function getUnifiedTracking(trackingId) {
 
     console.log(`[UnifiedTracker] Initiating tracking search for: ${cleanId}`);
 
-    // Execute pre-BD customs (ParcelsApp) and post-BD customs (BD Post) in parallel
-    const [intlResult, bdResultPrimary] = await Promise.all([
-        fetchInternationalTracking(cleanId),
-        fetchBDPostTracking(cleanId)
+    // Execute pre-BD customs (ParcelsApp + Cainiao) and post-BD customs (BD Post) in parallel
+    const [intlResult, cainiaoResult, bdResultPrimary] = await Promise.all([
+        fetchInternationalTracking(cleanId).catch(err => ({ found: false, error: err.message })),
+        fetchCainiaoTracking(cleanId).catch(err => ({ found: false, error: err.message })),
+        fetchBDPostTracking(cleanId).catch(err => ({ found: false, error: err.message }))
     ]);
 
     let bdResult = bdResultPrimary;
 
     // If international tracking found a secondary BD post tracking ID (e.g. RB...SG), query BD Post for that secondary ID too
-    if (intlResult.found && intlResult.destinationTrackingId && intlResult.destinationTrackingId !== cleanId) {
-        console.log(`[UnifiedTracker] Secondary BD Tracking ID found: ${intlResult.destinationTrackingId}. Querying BD Post...`);
-        const secondaryBdResult = await fetchBDPostTracking(intlResult.destinationTrackingId);
-        if (secondaryBdResult.found && secondaryBdResult.events.length > 0) {
+    const secondaryId = intlResult.destinationTrackingId || cainiaoResult.destinationTrackingId;
+    if (secondaryId && secondaryId !== cleanId) {
+        console.log(`[UnifiedTracker] Secondary BD Tracking ID found: ${secondaryId}. Querying BD Post...`);
+        const secondaryBdResult = await fetchBDPostTracking(secondaryId).catch(() => ({ found: false }));
+        if (secondaryBdResult.found && secondaryBdResult.events && secondaryBdResult.events.length > 0) {
             bdResult = secondaryBdResult;
         }
     }
 
     const rawCombinedEvents = [];
 
-    // Process International events (Pre-BD Customs)
+    // 1. Add ParcelsApp events
     if (intlResult.found && intlResult.events) {
         intlResult.events.forEach(ev => {
             rawCombinedEvents.push({
@@ -53,31 +56,43 @@ async function getUnifiedTracking(trackingId) {
         });
     }
 
-    // Process BD Post IPS events (Post-BD Customs)
-    if (bdResult.found && bdResult.events) {
-        bdResult.events.forEach(ev => {
-            let badge = 'badge-warning';
-            let stage = 'POST_CUSTOMS';
-
-            const statusLower = (ev.status || '').toLowerCase();
-            const locLower = (ev.location || '').toLowerCase();
-
-            if (statusLower.includes('deliver') || locLower.includes('delivered')) {
-                badge = 'badge-success';
-                stage = 'DELIVERED';
-            } else if (locLower.includes('airport') || locLower.includes('customs') || statusLower.includes('incomming')) {
-                badge = 'badge-primary';
-                stage = 'BD_CUSTOMS';
-            } else if (locLower.includes('sorting') || locLower.includes('post office')) {
-                badge = 'badge-warning';
-                stage = 'LOCAL_SORTING';
-            }
-
+    // 2. Add Cainiao Global events
+    if (cainiaoResult.found && cainiaoResult.events) {
+        cainiaoResult.events.forEach(ev => {
             rawCombinedEvents.push({
                 date: ev.date,
                 status: ev.status,
                 location: ev.location,
-                details: `[BD Post] ${ev.status} at ${ev.location} (Origin: ${ev.origin || 'N/A'})`,
+                details: ev.details || ev.status,
+                source: ev.source || 'CAINIAO',
+                stage: 'PRE_CUSTOMS',
+                badgeClass: 'badge-info',
+                isLocal: false
+            });
+        });
+    }
+
+    // 3. Add BD Post IPS events
+    if (bdResult.found && bdResult.events) {
+        bdResult.events.forEach(ev => {
+            let badge = 'badge-warning';
+            let stage = 'POST_CUSTOMS';
+            
+            const locUpper = (ev.location || '').toUpperCase();
+            const statUpper = (ev.status || '').toUpperCase();
+            if (locUpper.includes('CUSTOMS') || statUpper.includes('CUSTOMS')) {
+                stage = 'CUSTOMS_CLEARANCE';
+                badge = 'badge-customs';
+            } else if (locUpper.includes('DELIVER') || statUpper.includes('DELIVER')) {
+                stage = 'DELIVERED';
+                badge = 'badge-success';
+            }
+
+            rawCombinedEvents.push({
+                date: ev.date,
+                status: `[BD Post] ${ev.status || 'In Transit'} at ${ev.location || 'Local Sorting'}`,
+                location: ev.location || 'Bangladesh',
+                details: ev.details || `[BD Post IPS] ${ev.status} at ${ev.location}`,
                 source: 'BD Post IPS',
                 stage: stage,
                 badgeClass: badge,
@@ -86,69 +101,74 @@ async function getUnifiedTracking(trackingId) {
         });
     }
 
-    // Apply deduplication and multi-source merging
-    const allEvents = mergeAndDeduplicateEvents(rawCombinedEvents);
+    // Merge and deduplicate across all 3 providers
+    const allCleanEvents = mergeAndDeduplicateEvents(rawCombinedEvents);
 
-    // Determine current overall progress status
-    let currentStage = 'UNKNOWN';
-    let statusText = 'No tracking updates found yet.';
-    let statusBadge = 'badge-secondary';
-    let progressPercentage = 10;
+    // Determine package stage & status text
+    let currentStage = 'SHIPPED';
+    let statusText = 'Item shipped by seller. Awaiting transit checkpoints.';
+    let isBDCustomsCleared = false;
+    let progressPercentage = 20;
 
-    if (bdResult.found && bdResult.events.length > 0) {
+    if (bdResult.found && bdResult.events && bdResult.events.length > 0) {
         const latestBd = bdResult.events[0];
-        const statusLower = (latestBd.status || '').toLowerCase();
-        const locLower = (latestBd.location || '').toLowerCase();
+        const loc = (latestBd.location || '').toUpperCase();
+        const stat = (latestBd.status || '').toUpperCase();
 
-        if (statusLower.includes('deliver') || locLower.includes('delivered')) {
+        if (stat.includes('DELIVERED') || loc.includes('DELIVERED')) {
             currentStage = 'DELIVERED';
-            statusText = 'Package Delivered successfully!';
-            statusBadge = 'badge-success';
+            statusText = `Delivered to recipient (${latestBd.location})`;
             progressPercentage = 100;
-        } else if (locLower.includes('out for delivery') || statusLower.includes('delivery')) {
-            currentStage = 'OUT_FOR_DELIVERY';
-            statusText = `Out for delivery at ${latestBd.location}`;
-            statusBadge = 'badge-success';
-            progressPercentage = 85;
-        } else if (locLower.includes('sorting') || locLower.includes('post office')) {
+            isBDCustomsCleared = true;
+        } else if (loc.includes('AIRPORT') || loc.includes('SORTING') || loc.includes('POST OFFICE')) {
             currentStage = 'BD_POST_SORTING';
             statusText = `In BD Post Office sorting at ${latestBd.location}`;
-            statusBadge = 'badge-warning';
             progressPercentage = 70;
+            isBDCustomsCleared = true;
+        } else if (loc.includes('CUSTOMS') || stat.includes('CUSTOMS') || stat.includes('HELD BY CUSTOMS')) {
+            currentStage = 'CUSTOMS';
+            statusText = `Under inspection at Bangladesh Customs (${latestBd.location})`;
+            progressPercentage = 50;
         } else {
             currentStage = 'ARRIVED_BD';
             statusText = `Arrived in Bangladesh (${latestBd.location})`;
-            statusBadge = 'badge-primary';
-            progressPercentage = 55;
+            progressPercentage = 50;
+            isBDCustomsCleared = true;
         }
-    } else if (intlResult.found && intlResult.events.length > 0) {
-        currentStage = 'INTERNATIONAL_TRANSIT';
-        const latestIntl = intlResult.events[0];
-        statusText = `In International Transit: ${latestIntl.status || latestIntl.details}`;
-        statusBadge = 'badge-info';
+    } else if (cainiaoResult.found || intlResult.found) {
+        currentStage = 'INTL_TRANSIT';
         progressPercentage = 35;
+        const topEv = allCleanEvents.length > 0 ? allCleanEvents[0] : null;
+        if (topEv) {
+            statusText = `In International Transit: ${topEv.status || topEv.details}`;
+        } else {
+            statusText = 'In International Transit (Pre-BD Customs)';
+        }
     }
 
     return {
         success: true,
         trackingId: cleanId,
-        destinationTrackingId: intlResult.destinationTrackingId || null,
         currentStage,
         statusText,
-        statusBadge,
         progressPercentage,
-        sources: {
-            international: {
-                found: intlResult.found,
-                carrier: intlResult.carrier || 'N/A'
-            },
-            bdPostIPS: {
-                found: bdResult.found,
-                location: bdResult.latestEvent ? bdResult.latestEvent.location : 'Not in BD IPS yet'
-            }
-        },
-        eventsCount: allEvents.length,
-        events: allEvents
+        isBDCustomsCleared,
+        intlSummary: intlResult.found ? {
+            carrier: intlResult.carrier,
+            source: intlResult.source,
+            eventsCount: intlResult.events ? intlResult.events.length : 0
+        } : (cainiaoResult.found ? {
+            carrier: cainiaoResult.carrier,
+            source: cainiaoResult.source,
+            eventsCount: cainiaoResult.events ? cainiaoResult.events.length : 0
+        } : null),
+        bdPostSummary: bdResult.found ? {
+            source: bdResult.source,
+            eventsCount: bdResult.events ? bdResult.events.length : 0,
+            latestLocation: bdResult.events[0] ? bdResult.events[0].location : null
+        } : null,
+        eventsCount: allCleanEvents.length,
+        events: allCleanEvents
     };
 }
 
