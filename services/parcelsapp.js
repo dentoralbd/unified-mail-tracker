@@ -156,7 +156,7 @@ function mergeAndDeduplicateEvents(rawEvents) {
 }
 
 /**
- * Fetch pre-BD customs international tracking details from ParcelsApp via Headless Browser
+ * Fetch pre-BD customs international tracking details from ParcelsApp via Network Response Interceptor & Headless Browser
  * @param {string} trackingId 
  * @returns {Promise<Object>}
  */
@@ -177,8 +177,6 @@ async function fetchInternationalTracking(trackingId) {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--no-zygote',
-                '--single-process',
                 '--disable-blink-features=AutomationControlled'
             ]
         };
@@ -189,94 +187,117 @@ async function fetchInternationalTracking(trackingId) {
         }
 
         browser = await puppeteer.launch(launchOptions);
-
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-        await page.goto(`https://parcelsapp.com/en/tracking/${cleanId}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 25000
+        let interceptedData = null;
+        let interceptedCarrier = 'International Courier';
+
+        // Intercept ParcelsApp internal API responses (/api/v2/parcels)
+        page.on('response', async (res) => {
+            const url = res.url();
+            if (url.includes('/api/v2/parcels') || url.includes('/api/v1/parcels')) {
+                try {
+                    const json = await res.json();
+                    if (json && (json.states || json.events)) {
+                        interceptedData = json;
+                        console.log(`[ParcelsAppScraper] Intercepted ParcelsApp API JSON payload (${(json.states || []).length} states)`);
+                    }
+                } catch(e) {}
+            }
         });
 
-        await new Promise(r => setTimeout(r, 6000));
-
-        const extracted = await page.evaluate(() => {
-            const rawEvents = [];
-            let destTrackingId = null;
-            let carrierName = '';
-
-            const carrierEl = document.querySelector('.courier-name, .checked-country, .carrier-title');
-            if (carrierEl) carrierName = carrierEl.innerText.trim();
-
-            const nextTrkEl = document.querySelector('.next-tracking-number, .destination-tracking-number');
-            if (nextTrkEl) destTrackingId = nextTrkEl.innerText.trim();
-
-            const rows = document.querySelectorAll('.event, .parcel-events .event, tr.event');
-            rows.forEach(r => {
-                const text = r.innerText.trim();
-                if (!text || text.length < 5) return;
-
-                // Filter out error banners and FAQ links
-                const lower = text.toLowerCase();
-                if (lower.includes('no information about your package') ||
-                    lower.includes('why is my parcel not tracking') ||
-                    lower.includes('could not detect carrier') ||
-                    lower.includes('carrier website is down') ||
-                    lower.includes('information has not been found yet') ||
-                    lower.includes('try again')) {
-                    return;
-                }
-
-                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                if (lines.length >= 2) {
-                    let date = lines[0];
-                    let status = lines[1];
-                    let location = 'International Transit';
-                    let source = 'ParcelsApp';
-
-                    if (lines.length >= 3 && lines[1].match(/^\d{2}:\d{2}$/)) {
-                        date = `${lines[0]} ${lines[1]}`;
-                        status = lines[2];
-                        if (lines.length >= 4) {
-                            source = lines[3];
-                        }
-                    } else if (lines.length >= 3) {
-                        source = lines[lines.length - 1];
-                    }
-
-                    // Double-check status text isn't error string
-                    const sLower = status.toLowerCase();
-                    if (!sLower.includes('no information') && !sLower.includes('why is my parcel')) {
-                        rawEvents.push({
-                            date,
-                            location,
-                            status,
-                            details: status,
-                            source,
-                            isLocal: false
-                        });
-                    }
-                }
+        try {
+            await page.goto(`https://parcelsapp.com/en/tracking/${cleanId}`, {
+                waitUntil: 'domcontentloaded',
+                timeout: 15000
             });
+        } catch (gotoErr) {
+            console.log(`[ParcelsAppScraper] Navigation note for ${cleanId}: ${gotoErr.message}`);
+        }
 
-            return {
-                carrierName,
-                destTrackingId,
-                rawEvents
-            };
-        });
+        // Wait for API payload interception (max 5 seconds)
+        for (let i = 0; i < 10; i++) {
+            if (interceptedData && Array.isArray(interceptedData.states) && interceptedData.states.length > 0) break;
+            await new Promise(r => setTimeout(r, 500));
+        }
 
-        await browser.close();
+        let rawEvents = [];
+
+        // If API response was intercepted, extract directly from API JSON
+        if (interceptedData && Array.isArray(interceptedData.states) && interceptedData.states.length > 0) {
+            const carriers = interceptedData.couriers || interceptedData.carriers || [];
+            
+            rawEvents = interceptedData.states.map(st => {
+                let dateStr = st.date || st.time;
+                if (dateStr && dateStr.includes('T')) {
+                    try {
+                        const d = new Date(dateStr);
+                        dateStr = d.toISOString().replace('T', ' ').substring(0, 16);
+                    } catch(e) {}
+                }
+
+                let source = 'ParcelsApp';
+                if (typeof st.carrier === 'number' && carriers[st.carrier]) {
+                    source = carriers[st.carrier].name || carriers[st.carrier].title || 'ParcelsApp';
+                }
+
+                return {
+                    date: dateStr || 'Recent',
+                    location: st.location || 'International Transit',
+                    status: st.status || 'In Transit',
+                    details: st.status || 'Transit Update',
+                    source: source,
+                    isLocal: false
+                };
+            });
+        } else {
+            // Fallback: DOM extraction
+            try {
+                const pages = await browser.pages();
+                const activePage = pages[pages.length - 1] || page;
+                const domExtracted = await activePage.evaluate(() => {
+                    const events = [];
+                    const rows = document.querySelectorAll('.event, .parcel-events .event, tr.event');
+                    rows.forEach(r => {
+                        const text = r.innerText.trim();
+                        if (!text || text.length < 5) return;
+                        const lower = text.toLowerCase();
+                        if (lower.includes('no information') || lower.includes('why is my parcel') || lower.includes('could not detect')) return;
+
+                        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        if (lines.length >= 2) {
+                            let date = lines[0];
+                            let status = lines[1];
+                            let source = lines.length >= 3 ? lines[lines.length - 1] : 'ParcelsApp';
+                            events.push({
+                                date,
+                                location: 'International Transit',
+                                status,
+                                details: status,
+                                source,
+                                isLocal: false
+                            });
+                        }
+                    });
+                    return events;
+                });
+                rawEvents = domExtracted || [];
+            } catch (domErr) {
+                console.log(`[ParcelsAppScraper] DOM fallback note: ${domErr.message}`);
+            }
+        }
+
+        await browser.close().catch(() => {});
         browser = null;
 
-        const cleanEvents = mergeAndDeduplicateEvents(extracted.rawEvents);
+        const cleanEvents = mergeAndDeduplicateEvents(rawEvents);
         console.log(`[ParcelsAppScraper] Successfully extracted ${cleanEvents.length} pre-BD customs events for ${cleanId}`);
 
         return {
             found: cleanEvents.length > 0,
             source: 'ParcelsApp',
-            carrier: extracted.carrierName || 'International Courier',
-            destinationTrackingId: extracted.destTrackingId,
+            carrier: interceptedCarrier,
             events: cleanEvents
         };
 
