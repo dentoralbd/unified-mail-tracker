@@ -3,12 +3,14 @@ const { getUnifiedTracking } = require('../services/tracker');
 const { getAllParcels, addOrUpdateParcel, deleteParcel, getParcel, saveAllParcels } = require('../services/db');
 
 function formatTrackingResponse(data) {
-    let msg = `📦 <b>Tracking Report:</b> <code>${data.trackingId}</code>\n`;
+    if (!data) return '❌ No tracking data available.';
+    let msg = `📦 <b>Tracking Report:</b> <code>${data.trackingId || 'N/A'}</code>\n`;
     if (data.destinationTrackingId) {
         msg += `🔖 <b>BD Post Local Ref:</b> <code>${data.destinationTrackingId}</code>\n`;
     }
-    msg += `📊 <b>Stage:</b> ${data.currentStage.replace('_', ' ')}\n`;
-    msg += `💡 <b>Status:</b> ${data.statusText}\n\n`;
+    const stageStr = (data.currentStage || 'IN_TRANSIT').replace(/_/g, ' ');
+    msg += `📊 <b>Stage:</b> ${stageStr}\n`;
+    msg += `💡 <b>Status:</b> ${data.statusText || 'Tracking search in progress'}\n\n`;
 
     const intlSrc = (data.sources && data.sources.international) || {};
     const bdSrc = (data.sources && data.sources.bdPostIPS) || {};
@@ -193,11 +195,16 @@ function initTelegramBot(token) {
             bot.sendMessage(chatId, `✅ <code>${trkId}</code> added to watchlist.`, { parse_mode: 'HTML' });
         } else if (data.startsWith('refresh_')) {
             const trkId = data.replace('refresh_', '');
-            bot.answerCallbackQuery(query.id, { text: 'Refreshing tracking status...' });
+            bot.answerCallbackQuery(query.id, { text: `Checking ${trkId}...` });
             
-            const updated = await getUnifiedTracking(trkId);
-            const text = formatTrackingResponse(updated);
-            bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+            try {
+                const updated = await getUnifiedTracking(trkId);
+                const text = formatTrackingResponse(updated);
+                bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+            } catch (err) {
+                console.error(`[TelegramBot] Refresh error for ${trkId}:`, err.message);
+                bot.sendMessage(chatId, `❌ Error checking status for <code>${trkId}</code>: ${err.message}`, { parse_mode: 'HTML' });
+            }
         } else if (data.startsWith('del_')) {
             const trkId = data.replace('del_', '');
             deleteParcel(trkId);
