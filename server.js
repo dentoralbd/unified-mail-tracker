@@ -29,6 +29,22 @@ cron.schedule('0 * * * *', async () => {
 // Health check endpoint for Cloud / Railway monitoring
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
+// 24/7 Keep-Alive ping to prevent cloud servers (like Render) from sleeping
+const appUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+if (appUrl) {
+    cron.schedule('*/10 * * * *', () => {
+        try {
+            const httpModule = appUrl.startsWith('https') ? require('https') : require('http');
+            httpModule.get(`${appUrl}/health`, (res) => {
+                console.log(`[KeepAlive] Self-pinged ${appUrl}/health - Status: ${res.statusCode}`);
+            }).on('error', (err) => {
+                console.log(`[KeepAlive] Ping notice: ${err.message}`);
+            });
+        } catch(e) {}
+    });
+    console.log(`🚀 [KeepAlive] 24/7 Self-ping enabled for: ${appUrl}`);
+}
+
 // REST API Endpoints
 
 // 1. Live unified tracking lookup
