@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resEventCount = document.getElementById('res-event-count');
     const timelineEvents = document.getElementById('timeline-events');
 
+    const sourceParcelsAppName = document.getElementById('source-parcelsapp-name');
     const sourceParcelsAppStatus = document.getElementById('source-parcelsapp-status');
     const sourceBdPostStatus = document.getElementById('source-bdpost-status');
     const linkParcelsApp = document.getElementById('link-parcelsapp');
@@ -221,11 +222,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const bdSource = (data.sources && data.sources.bdPostIPS) || {};
 
         // Source indicators
+        const isMorning = data.trackingId.toUpperCase().endsWith('MG') || (intlSource.carrier && intlSource.carrier.includes('Morning Global'));
+        
+        if (sourceParcelsAppName) {
+            sourceParcelsAppName.innerText = isMorning ? 'Morning Global (Pre-BD Customs)' : 'ParcelsApp / Cainiao (Pre-BD Customs)';
+        }
+
         sourceParcelsAppStatus.innerText = intlSource.found
             ? `Active (${intlSource.carrier || 'International Courier'})`
             : 'Pre-customs details pending';
         
-        linkParcelsApp.href = `https://parcelsapp.com/en/tracking/${data.trackingId}`;
+        if (isMorning) {
+            linkParcelsApp.innerText = 'Open Morning Global ↗';
+            linkParcelsApp.href = `https://www.morninglobal.com/trace-track/?billcode=${data.trackingId}`;
+        } else {
+            linkParcelsApp.innerText = 'Open on ParcelsApp ↗';
+            linkParcelsApp.href = `https://parcelsapp.com/en/tracking/${data.trackingId}`;
+        }
 
         sourceBdPostStatus.innerText = bdSource.found
             ? `Tracked in BD IPS (${bdSource.location || 'Bangladesh Post'})`
