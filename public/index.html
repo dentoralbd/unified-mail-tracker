@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified Mail Tracker | AliExpress & BD Post IPS</title>
+    <meta name="description" content="Unified Mail Tracking System combining ParcelsApp pre-customs tracking and Bangladesh Post IPS tracking into one seamless timeline.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-background"></div>
+    
+    <!-- Navigation Header -->
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="brand">
+                <div class="brand-icon">📦</div>
+                <div class="brand-text">
+                    <span class="brand-title">Unified Mail Tracker</span>
+                    <span class="brand-subtitle">AliExpress + BD Post IPS</span>
+                </div>
+            </div>
+            
+            <div class="nav-actions">
+                <button class="btn btn-secondary" id="btn-open-watchlist">
+                    <span class="btn-icon">📋</span> Watchlist (<span id="watchlist-count">0</span>)
+                </button>
+                <button class="btn btn-gradient" id="btn-open-telegram">
+                    <span class="btn-icon">✈️</span> Telegram Bot
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+        <!-- Hero Search Section -->
+        <section class="search-hero">
+            <h1 class="hero-title">Unified Package Tracking</h1>
+
+            <form id="tracking-form" class="search-box-container">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input 
+                        type="text" 
+                        id="tracking-id-input" 
+                        placeholder="Enter AliExpress / International tracking ID (e.g. UG251083645MV, RB123456789SG)"
+                        autocomplete="off"
+                        required
+                    />
+                    <button type="submit" class="btn btn-primary btn-search" id="btn-search">
+                        <span class="search-btn-text">Track Package</span>
+                        <div class="spinner hidden" id="search-spinner"></div>
+                    </button>
+                </div>
+            </form>
+
+            <div class="quick-samples">
+                <span class="sample-label">Try sample ID:</span>
+                <button type="button" class="sample-chip" data-sample="UG251083645MV">UG251083645MV</button>
+            </div>
+        </section>
+
+        <!-- Tracking Results Card -->
+        <section class="results-section hidden" id="results-section">
+            <div class="card glass-card result-card">
+                <!-- Header with Status & Save Button -->
+                <div class="result-header">
+                    <div class="result-title-group">
+                        <span class="result-tracking-id" id="res-tracking-id">UG251083645MV</span>
+                        <span class="badge" id="res-stage-badge">ARRIVED BD</span>
+                        <span class="bd-ref-badge hidden" id="res-bd-ref">BD Ref: RB123456789SG</span>
+                    </div>
+
+                    <div class="result-actions">
+                        <button class="btn btn-sm btn-outline" id="btn-save-parcel">
+                            <span>➕ Save to Watchlist</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline" id="btn-refresh-tracking">
+                            <span>🔄 Refresh</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="status-summary" id="res-status-summary">
+                    Loading package status...
+                </div>
+
+                <!-- Source Status Cards -->
+                <div class="sources-grid">
+                    <div class="source-card" id="source-parcelsapp">
+                        <div class="source-header">
+                            <span class="source-icon">🌐</span>
+                            <span class="source-name">ParcelsApp (Pre-BD Customs)</span>
+                        </div>
+                        <div class="source-status" id="source-parcelsapp-status">Checking international transit...</div>
+                        <a href="#" target="_blank" class="source-link" id="link-parcelsapp">Open on ParcelsApp ↗</a>
+                    </div>
+
+                    <div class="source-card" id="source-bdpost">
+                        <div class="source-header">
+                            <span class="source-icon">🇧🇩</span>
+                            <span class="source-name">BD Post IPS (Post-BD Customs)</span>
+                        </div>
+                        <div class="source-status" id="source-bdpost-status">Checking BD Post IPS...</div>
+                        <a href="https://ipsbd.bdpost.gov.bd/mail-tracking.html" target="_blank" class="source-link">Open BD Post IPS ↗</a>
+                    </div>
+                </div>
+
+                <!-- Milestone Progress Stepper -->
+                <div class="stepper-wrapper">
+                    <div class="stepper-title">Delivery Progress Timeline</div>
+                    <div class="stepper">
+                        <div class="step" id="step-1">
+                            <div class="step-circle">1</div>
+                            <div class="step-label">Seller Shipped</div>
+                        </div>
+                        <div class="step-line" id="line-1"></div>
+                        <div class="step" id="step-2">
+                            <div class="step-circle">2</div>
+                            <div class="step-label">Intl. Transit</div>
+                        </div>
+                        <div class="step-line" id="line-2"></div>
+                        <div class="step" id="step-3">
+                            <div class="step-circle">3</div>
+                            <div class="step-label">BD Customs</div>
+                        </div>
+                        <div class="step-line" id="line-3"></div>
+                        <div class="step" id="step-4">
+                            <div class="step-circle">4</div>
+                            <div class="step-label">BD Post Sorting</div>
+                        </div>
+                        <div class="step-line" id="line-4"></div>
+                        <div class="step" id="step-5">
+                            <div class="step-circle">5</div>
+                            <div class="step-label">Delivered</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chronological Timeline Events Feed -->
+                <div class="timeline-container">
+                    <div class="timeline-header">
+                        <h3>Detailed Checkpoints Timeline (<span id="res-event-count">0</span>)</h3>
+                    </div>
+                    <div class="timeline-events" id="timeline-events">
+                        <!-- Events populated dynamically -->
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Watchlist Drawer / Modal -->
+    <div class="modal-backdrop hidden" id="watchlist-modal">
+        <div class="modal-card glass-card">
+            <div class="modal-header">
+                <h3>📋 Saved Parcels Watchlist</h3>
+                <button class="modal-close" id="btn-close-watchlist">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="watchlist-items" id="watchlist-items">
+                    <p class="empty-text">No saved parcels yet. Search and click "Save to Watchlist".</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-refresh-watchlist">🔄 Refresh All Parcels</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telegram Bot Modal -->
+    <div class="modal-backdrop hidden" id="telegram-modal">
+        <div class="modal-card glass-card">
+            <div class="modal-header">
+                <h3>✈️ Telegram Bot Integration</h3>
+                <button class="modal-close" id="btn-close-telegram">&times;</button>
+            </div>
+            <div class="modal-body telegram-instructions">
+                <p>Track packages directly from Telegram and get push notifications when your package passes BD Customs or reaches your local Post Office!</p>
+
+                <div class="instruction-step">
+                    <span class="step-num">1</span>
+                    <div>
+                        <b>Start Telegram Bot:</b>
+                        <p>Search for your bot username on Telegram or configure <code>TELEGRAM_BOT_TOKEN</code> in your <code>.env</code> file.</p>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <span class="step-num">2</span>
+                    <div>
+                        <b>Supported Bot Commands:</b>
+                        <ul class="bot-cmd-list">
+                            <li><code>/track &lt;tracking_id&gt;</code> - Check status immediately</li>
+                            <li><code>/add &lt;tracking_id&gt; [label]</code> - Save for auto push notifications</li>
+                            <li><code>/list</code> - View all watchlist parcels</li>
+                            <li><code>/delete &lt;tracking_id&gt;</code> - Remove parcel</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

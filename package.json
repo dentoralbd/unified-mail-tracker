@@ -1,0 +1,31 @@
+{
+  "name": "unified-bd-mail-tracker",
+  "version": "1.0.0",
+  "description": "Unified International Mail & BD Post IPS Tracking Application with Telegram Bot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "aliexpress",
+    "parcelsapp",
+    "bdpost",
+    "ips",
+    "telegram-bot",
+    "mail-tracking",
+    "bangladesh"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "puppeteer-core": "^25.5.0"
+  }
+}
