@@ -183,8 +183,8 @@ async function fetchInternationalTracking(trackingId) {
             ]
         };
 
-        const execPath = findBrowserExecutable();
-        if (execPath) {
+        const execPath = findBrowserExecutable() || (typeof puppeteer.executablePath === 'function' ? puppeteer.executablePath() : null);
+        if (execPath && fs.existsSync(execPath)) {
             launchOptions.executablePath = execPath;
         }
 

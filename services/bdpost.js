@@ -18,19 +18,30 @@ async function fetchBDPostTracking(itemId) {
         return { success: false, error: 'Tracking ID is required', events: [] };
     }
 
+    let response = null;
+    let attempts = 0;
+    const postData = new URLSearchParams({ item_id: cleanId }).toString();
+
     try {
-        const postData = new URLSearchParams({ item_id: cleanId }).toString();
-        const response = await axios.post('https://ipsbd.bdpost.gov.bd/app_mail_tracking/search1.php', postData, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-With': 'XMLHttpRequest',
-                'Referer': 'https://ipsbd.bdpost.gov.bd/mail-tracking.html',
-                'Accept': '*/*'
-            },
-            httpsAgent,
-            timeout: 15000
-        });
+        while (attempts < 2 && !response) {
+            attempts++;
+            try {
+                response = await axios.post('https://ipsbd.bdpost.gov.bd/app_mail_tracking/search1.php', postData, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Referer': 'https://ipsbd.bdpost.gov.bd/mail-tracking.html',
+                        'Accept': '*/*'
+                    },
+                    httpsAgent,
+                    timeout: 15000
+                });
+            } catch (err) {
+                if (attempts >= 2) throw err;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
 
         const htmlData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
 
