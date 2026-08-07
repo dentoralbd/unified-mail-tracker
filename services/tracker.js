@@ -133,45 +133,40 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
     // Merge and deduplicate across all providers
     const allCleanEvents = mergeAndDeduplicateEvents(rawCombinedEvents);
 
-    // Determine package stage & status text
+    // Determine package stage & status text dynamically from latest overall merged event
     let currentStage = 'SHIPPED';
     let statusText = 'Item shipped by seller. Awaiting transit checkpoints.';
     let isBDCustomsCleared = false;
     let progressPercentage = 20;
 
-    if (bdResult.found && bdResult.events && bdResult.events.length > 0) {
-        const latestBd = bdResult.events[0];
-        const loc = (latestBd.location || '').toUpperCase();
-        const stat = (latestBd.status || '').toUpperCase();
+    if (allCleanEvents.length > 0) {
+        const topEv = allCleanEvents[0];
+        const topStatus = (topEv.status || topEv.details || '').toUpperCase();
+        const topLoc = (topEv.location || '').toUpperCase();
 
-        if (stat.includes('DELIVERED') || loc.includes('DELIVERED')) {
+        if (topStatus.includes('DELIVERED') || topLoc.includes('DELIVERED')) {
             currentStage = 'DELIVERED';
-            statusText = `Delivered to recipient (${latestBd.location})`;
+            statusText = `Delivered: ${topEv.details || topEv.status}`;
             progressPercentage = 100;
             isBDCustomsCleared = true;
-        } else if (loc.includes('AIRPORT') || loc.includes('SORTING') || loc.includes('POST OFFICE')) {
+        } else if (topStatus.includes('OUT FOR DELIVERY') || topStatus.includes('HANDED OVER') || topLoc.includes('SORTING') || topLoc.includes('POST OFFICE') || topLoc.includes('AIRPORT')) {
             currentStage = 'BD_POST_SORTING';
-            statusText = `In BD Post Office sorting at ${latestBd.location}`;
-            progressPercentage = 70;
+            statusText = `Out for Local Delivery / Sorting: ${topEv.details || topEv.status}`;
+            progressPercentage = 75;
             isBDCustomsCleared = true;
-        } else if (loc.includes('CUSTOMS') || stat.includes('CUSTOMS') || stat.includes('HELD BY CUSTOMS')) {
-            currentStage = 'CUSTOMS';
-            statusText = `Under inspection at Bangladesh Customs (${latestBd.location})`;
-            progressPercentage = 50;
-        } else {
+        } else if (topStatus.includes('CUSTOMS CLEARED') || topStatus.includes('CLEARANCE COMPLETE')) {
             currentStage = 'ARRIVED_BD';
-            statusText = `Arrived in Bangladesh (${latestBd.location})`;
-            progressPercentage = 50;
+            statusText = `BD Customs Cleared: ${topEv.details || topEv.status}`;
+            progressPercentage = 60;
             isBDCustomsCleared = true;
-        }
-    } else if (cainiaoResult.found || intlResult.found || morningResult.found) {
-        currentStage = 'INTL_TRANSIT';
-        progressPercentage = 35;
-        const topEv = allCleanEvents.length > 0 ? allCleanEvents[0] : null;
-        if (topEv) {
-            statusText = `In International Transit: ${topEv.status || topEv.details}`;
+        } else if (topStatus.includes('CUSTOMS') || topStatus.includes('CLEARANCE') || topLoc.includes('CUSTOMS')) {
+            currentStage = 'CUSTOMS';
+            statusText = `Under inspection at Customs: ${topEv.details || topEv.status}`;
+            progressPercentage = 50;
         } else {
-            statusText = 'In International Transit (Pre-BD Customs)';
+            currentStage = 'INTL_TRANSIT';
+            statusText = `In International Transit: ${topEv.details || topEv.status}`;
+            progressPercentage = 35;
         }
     }
 
