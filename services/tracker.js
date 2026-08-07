@@ -2,13 +2,17 @@ const { fetchBDPostTracking } = require('./bdpost');
 const { fetchInternationalTracking, mergeAndDeduplicateEvents } = require('./parcelsapp');
 const { fetchCainiaoTracking } = require('./cainiao');
 
+const trackingCache = new Map();
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes cache
+
 /**
  * Unified Mail Tracking Engine
  * Combines Pre-BD Customs (ParcelsApp + Cainiao Global) & Post-BD Customs (BD Post IPS)
  * @param {string} trackingId 
+ * @param {boolean} forceRefresh
  * @returns {Promise<Object>} Unified tracking report
  */
-async function getUnifiedTracking(trackingId) {
+async function getUnifiedTracking(trackingId, forceRefresh = false) {
     const cleanId = (trackingId || '').trim().toUpperCase();
     if (!cleanId) {
         return {
@@ -17,7 +21,14 @@ async function getUnifiedTracking(trackingId) {
         };
     }
 
-    console.log(`[UnifiedTracker] Initiating tracking search for: ${cleanId}`);
+    // Check in-memory cache
+    const cached = trackingCache.get(cleanId);
+    if (!forceRefresh && cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+        console.log(`[UnifiedTracker] Serving cached tracking data for ${cleanId} (Age: ${Math.round((Date.now() - cached.timestamp)/1000)}s)`);
+        return cached.data;
+    }
+
+    console.log(`[UnifiedTracker] Initiating fresh tracking search for: ${cleanId}`);
 
     // Execute pre-BD customs (ParcelsApp + Cainiao) and post-BD customs (BD Post) in parallel
     const [intlResult, cainiaoResult, bdResultPrimary] = await Promise.all([
@@ -177,6 +188,12 @@ async function getUnifiedTracking(trackingId) {
         eventsCount: allCleanEvents.length,
         events: allCleanEvents
     };
+
+    if (result.success && result.eventsCount > 0) {
+        trackingCache.set(cleanId, { timestamp: Date.now(), data: result });
+    }
+
+    return result;
 }
 
 module.exports = {
