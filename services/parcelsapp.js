@@ -2,14 +2,21 @@ const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 
 /**
- * Locate Microsoft Edge or Google Chrome binary on system
+ * Locate Chromium or Edge binary on system (Windows & Linux Cloud containers)
  */
 function findBrowserExecutable() {
+    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
     const candidatePaths = [
         'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
         'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Users\\User\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe'
+        'C:\\Users\\User\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome-stable'
     ];
     return candidatePaths.find(p => fs.existsSync(p)) || null;
 }
