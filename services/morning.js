@@ -1,4 +1,7 @@
 const axios = require('axios');
+const https = require('https');
+
+const httpsAgent = new https.Agent({ keepAlive: true });
 
 /**
  * Fetch tracking details from Morning Global (only for IDs ending with MG, e.g. BR004453737MG)
@@ -13,7 +16,7 @@ async function fetchMorningGlobalTracking(trackingId) {
 
     console.log(`[MorningGlobal] Querying Morning Global API for MG package: ${cleanId}`);
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             const formData = new URLSearchParams();
             formData.append('ydh_list', cleanId);
@@ -23,9 +26,11 @@ async function fetchMorningGlobalTracking(trackingId) {
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                     'Referer': 'https://www.morninglobal.com/trace-track/',
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Connection': 'keep-alive'
                 },
-                timeout: 25000
+                httpsAgent,
+                timeout: 8000
             });
 
             if (res.data && res.data.code === 0 && res.data.data && res.data.data.length > 0) {
