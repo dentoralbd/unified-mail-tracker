@@ -1,4 +1,10 @@
-const puppeteer = require('puppeteer-core');
+let puppeteer;
+try {
+    puppeteer = require('puppeteer');
+} catch (e) {
+    puppeteer = require('puppeteer-core');
+}
+
 const fs = require('fs');
 
 /**
@@ -54,7 +60,6 @@ function parseEventTimestamp(dateStr) {
     if (!dateStr) return 0;
     const str = String(dateStr).trim();
 
-    // Check DD-MM-YYYY HH:MM:SS format (BD Post format)
     const bdMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
     if (bdMatch) {
         const day = bdMatch[1].padStart(2, '0');
@@ -69,7 +74,6 @@ function parseEventTimestamp(dateStr) {
         if (!isNaN(t)) return t;
     }
 
-    // Try standard Date parse
     const t = new Date(str).getTime();
     if (!isNaN(t)) return t;
 
@@ -89,7 +93,6 @@ function mergeAndDeduplicateEvents(rawEvents) {
         timestamp: parseEventTimestamp(ev.date)
     }));
 
-    // Sort chronologically descending (newest first)
     items.sort((a, b) => b.timestamp - a.timestamp);
 
     const merged = [];
@@ -99,10 +102,8 @@ function mergeAndDeduplicateEvents(rawEvents) {
             const timeDiff = Math.abs(m.timestamp - ev.timestamp);
             const sameDay = getNormalizedDateKey(m.date) === getNormalizedDateKey(ev.date);
 
-            // Exact or close timestamp (within 5 minutes)
             if (timeDiff <= 5 * 60 * 1000 && m.isLocal === ev.isLocal) return true;
 
-            // Same day and within 3 hours for international courier status updates
             if (sameDay && timeDiff <= 3 * 3600 * 1000 && (m.isLocal === ev.isLocal)) {
                 const s1 = normalizeText(m.status || m.details);
                 const s2 = normalizeText(ev.status || ev.details);
@@ -119,14 +120,12 @@ function mergeAndDeduplicateEvents(rawEvents) {
         if (matchIndex >= 0) {
             const existing = merged[matchIndex];
 
-            // Merge sources
             const existingSources = existing.source.split(', ').map(s => s.trim());
             if (ev.source && !existingSources.includes(ev.source)) {
                 existingSources.push(ev.source);
                 existing.source = existingSources.join(', ');
             }
 
-            // Merge descriptions
             const norm1 = normalizeText(existing.details);
             const norm2 = normalizeText(ev.details);
             if (norm1 !== norm2 && !norm1.includes(norm2) && !norm2.includes(norm1)) {
@@ -157,7 +156,7 @@ function mergeAndDeduplicateEvents(rawEvents) {
 }
 
 /**
- * Fetch pre-BD customs international tracking details from ParcelsApp via Headless Edge
+ * Fetch pre-BD customs international tracking details from ParcelsApp via Headless Browser
  * @param {string} trackingId 
  * @returns {Promise<Object>}
  */
@@ -167,21 +166,29 @@ async function fetchInternationalTracking(trackingId) {
         return { found: false, source: 'ParcelsApp', events: [] };
     }
 
-    const execPath = findBrowserExecutable();
-    if (!execPath) {
-        console.error('[ParcelsAppScraper] No local Edge/Chrome executable found');
-        return { found: false, source: 'ParcelsApp', events: [] };
-    }
-
     console.log(`[ParcelsAppScraper] Launching headless browser for ${cleanId}...`);
 
     let browser = null;
     try {
-        browser = await puppeteer.launch({
-            executablePath: execPath,
+        const launchOptions = {
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-        });
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-zygote',
+                '--single-process',
+                '--disable-blink-features=AutomationControlled'
+            ]
+        };
+
+        const execPath = findBrowserExecutable();
+        if (execPath) {
+            launchOptions.executablePath = execPath;
+        }
+
+        browser = await puppeteer.launch(launchOptions);
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
@@ -191,7 +198,6 @@ async function fetchInternationalTracking(trackingId) {
             timeout: 25000
         });
 
-        // Wait for ParcelsApp JS client to query carriers and render events
         await new Promise(r => setTimeout(r, 6000));
 
         const extracted = await page.evaluate(() => {
@@ -199,15 +205,12 @@ async function fetchInternationalTracking(trackingId) {
             let destTrackingId = null;
             let carrierName = '';
 
-            // Extract courier name
             const carrierEl = document.querySelector('.courier-name, .checked-country, .carrier-title');
             if (carrierEl) carrierName = carrierEl.innerText.trim();
 
-            // Extract secondary tracking number if present
             const nextTrkEl = document.querySelector('.next-tracking-number, .destination-tracking-number');
             if (nextTrkEl) destTrackingId = nextTrkEl.innerText.trim();
 
-            // Query events table / timeline rows
             const rows = document.querySelectorAll('.event, .parcel-events .event, tr.event');
             rows.forEach(r => {
                 const text = r.innerText.trim();
@@ -216,12 +219,10 @@ async function fetchInternationalTracking(trackingId) {
                 const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 if (lines.length >= 2) {
                     let date = lines[0];
-                    let time = '';
                     let status = lines[1];
                     let location = 'International Transit';
                     let source = 'ParcelsApp';
 
-                    // Parse line structures: Date, Time, Status, Carrier
                     if (lines.length >= 3 && lines[1].match(/^\d{2}:\d{2}$/)) {
                         date = `${lines[0]} ${lines[1]}`;
                         status = lines[2];

@@ -1,8 +1,0 @@
-[providers]
-providers = ["node"]
-
-[nix]
-nixPkgs = ["chromium"]
-
-[env]
-PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
