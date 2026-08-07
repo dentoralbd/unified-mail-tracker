@@ -1,0 +1,31 @@
+[providers]
+providers = ["node"]
+
+[nix]
+nixPkgs = [
+  "chromium",
+  "glib",
+  "nss",
+  "nspr",
+  "atk",
+  "cups",
+  "dbus",
+  "gtk3",
+  "pango",
+  "cairo",
+  "xorg.libX11",
+  "xorg.libXcomposite",
+  "xorg.libXcursor",
+  "xorg.libXdamage",
+  "xorg.libXext",
+  "xorg.libXfixes",
+  "xorg.libXi",
+  "xorg.libXrandr",
+  "xorg.libXrender",
+  "xorg.libXtst",
+  "alsa-lib",
+  "mesa"
+]
+
+[env]
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"

@@ -26,6 +26,9 @@ cron.schedule('0 * * * *', async () => {
     await checkAllParcelsAndNotify(telegramBot);
 });
 
+// Health check endpoint for Cloud / Railway monitoring
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
 // REST API Endpoints
 
 // 1. Live unified tracking lookup
