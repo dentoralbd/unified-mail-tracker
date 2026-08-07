@@ -216,6 +216,17 @@ async function fetchInternationalTracking(trackingId) {
                 const text = r.innerText.trim();
                 if (!text || text.length < 5) return;
 
+                // Filter out error banners and FAQ links
+                const lower = text.toLowerCase();
+                if (lower.includes('no information about your package') ||
+                    lower.includes('why is my parcel not tracking') ||
+                    lower.includes('could not detect carrier') ||
+                    lower.includes('carrier website is down') ||
+                    lower.includes('information has not been found yet') ||
+                    lower.includes('try again')) {
+                    return;
+                }
+
                 const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
                 if (lines.length >= 2) {
                     let date = lines[0];
@@ -233,14 +244,18 @@ async function fetchInternationalTracking(trackingId) {
                         source = lines[lines.length - 1];
                     }
 
-                    rawEvents.push({
-                        date,
-                        location,
-                        status,
-                        details: status,
-                        source,
-                        isLocal: false
-                    });
+                    // Double-check status text isn't error string
+                    const sLower = status.toLowerCase();
+                    if (!sLower.includes('no information') && !sLower.includes('why is my parcel')) {
+                        rawEvents.push({
+                            date,
+                            location,
+                            status,
+                            details: status,
+                            source,
+                            isLocal: false
+                        });
+                    }
                 }
             });
 
