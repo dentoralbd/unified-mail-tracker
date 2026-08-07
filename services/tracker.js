@@ -53,6 +53,26 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
 
     const rawCombinedEvents = [];
 
+    const addMorningEvents = () => {
+        if (morningResult.found && morningResult.events) {
+            morningResult.events.forEach(ev => {
+                rawCombinedEvents.push({
+                    date: ev.date,
+                    status: ev.status,
+                    location: ev.location,
+                    details: ev.details || ev.status,
+                    source: ev.source || 'Morning Global',
+                    stage: 'PRE_CUSTOMS',
+                    badgeClass: 'badge-info',
+                    isLocal: false
+                });
+            });
+        }
+    };
+
+    const isMG = cleanId.endsWith('MG');
+    if (isMG) addMorningEvents();
+
     // 1. Add ParcelsApp events
     if (intlResult.found && intlResult.events) {
         intlResult.events.forEach(ev => {
@@ -85,21 +105,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
         });
     }
 
-    // 3. Add Morning Global events
-    if (morningResult.found && morningResult.events) {
-        morningResult.events.forEach(ev => {
-            rawCombinedEvents.push({
-                date: ev.date,
-                status: ev.status,
-                location: ev.location,
-                details: ev.details || ev.status,
-                source: ev.source || 'Morning Global',
-                stage: 'PRE_CUSTOMS',
-                badgeClass: 'badge-info',
-                isLocal: false
-            });
-        });
-    }
+    if (!isMG) addMorningEvents();
 
     // 4. Add BD Post IPS events
     if (bdResult.found && bdResult.events) {
