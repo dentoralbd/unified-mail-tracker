@@ -30,10 +30,76 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCloseTelegram = document.getElementById('btn-close-telegram');
     const telegramModal = document.getElementById('telegram-modal');
 
+    const recentSearchesSection = document.getElementById('recent-searches-section');
+    const recentChipsContainer = document.getElementById('recent-chips-container');
+
     let currentTrackingData = null;
 
-    // Load initial watchlist count
+    // Load initial watchlist count & recent searches
     fetchWatchlist();
+    renderRecentSearches();
+
+    // Recent searches management
+    function getRecentSearches() {
+        try {
+            return JSON.parse(localStorage.getItem('recent_searches')) || [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveRecentSearch(trackingId) {
+        if (!trackingId) return;
+        const clean = trackingId.trim().toUpperCase();
+        let list = getRecentSearches();
+        list = list.filter(item => item !== clean);
+        list.unshift(clean);
+        if (list.length > 8) list = list.slice(0, 8);
+        localStorage.setItem('recent_searches', JSON.stringify(list));
+        renderRecentSearches();
+    }
+
+    function removeRecentSearch(trackingId) {
+        let list = getRecentSearches();
+        list = list.filter(item => item !== trackingId);
+        localStorage.setItem('recent_searches', JSON.stringify(list));
+        renderRecentSearches();
+    }
+
+    function renderRecentSearches() {
+        const list = getRecentSearches();
+        if (!recentSearchesSection || !recentChipsContainer) return;
+
+        if (list.length === 0) {
+            recentSearchesSection.classList.add('hidden');
+            recentChipsContainer.innerHTML = '';
+            return;
+        }
+
+        recentSearchesSection.classList.remove('hidden');
+        recentChipsContainer.innerHTML = '';
+
+        list.forEach(id => {
+            const chip = document.createElement('div');
+            chip.className = 'recent-chip';
+            chip.innerHTML = `
+                <span class="recent-chip-text">${id}</span>
+                <span class="recent-chip-remove" title="Remove">&times;</span>
+            `;
+
+            chip.querySelector('.recent-chip-text').addEventListener('click', () => {
+                trackingInput.value = id;
+                performSearch(id);
+            });
+
+            chip.querySelector('.recent-chip-remove').addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeRecentSearch(id);
+            });
+
+            recentChipsContainer.appendChild(chip);
+        });
+    }
 
     // Sample chip click listener
     document.querySelectorAll('.sample-chip').forEach(chip => {
@@ -112,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.success) {
                 currentTrackingData = data;
+                saveRecentSearch(trackingId);
                 renderResults(data);
                 resultsSection.classList.remove('hidden');
             } else {
