@@ -380,6 +380,62 @@ body {
     .sources-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 640px) {
+    .navbar {
+        padding: 10px 14px;
+    }
+
+    .brand-icon {
+        font-size: 22px;
+        padding: 6px;
+    }
+
+    .brand-title {
+        font-size: 15px;
+    }
+
+    .brand-subtitle {
+        display: none;
+    }
+
+    .nav-actions {
+        gap: 6px;
+    }
+
+    .nav-actions .btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    .btn-text-full {
+        display: none;
+    }
+
+    .search-hero {
+        padding: 24px 12px 16px;
+    }
+
+    .hero-title {
+        font-size: 24px;
+    }
+
+    .search-input-wrapper {
+        flex-direction: column;
+        padding: 8px;
+        border-radius: var(--radius-md);
+    }
+
+    .search-input-wrapper input {
+        width: 100%;
+        padding: 10px 12px;
+    }
+
+    .btn-search {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
 .source-card {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-color);
