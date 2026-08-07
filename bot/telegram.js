@@ -231,7 +231,7 @@ async function checkAllParcelsAndNotify(bot) {
         if (!p.chatIds || p.chatIds.length === 0) continue;
 
         try {
-            const tracking = await getUnifiedTracking(p.trackingId);
+            const tracking = await getUnifiedTracking(p.trackingId, true);
             
             // Detect updates
             const isNewStatus = tracking.statusText !== p.lastStatus;

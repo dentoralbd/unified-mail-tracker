@@ -20,9 +20,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 const telegramBot = initTelegramBot(botToken);
 
-// Schedule background updates every hour (0 * * * *)
-cron.schedule('0 * * * *', async () => {
-    console.log('[Scheduler] Running hourly automated parcel update check...');
+// Schedule background automated updates every 15 minutes (*/15 * * * *)
+cron.schedule('*/15 * * * *', async () => {
+    console.log('[Scheduler] Running automated 15-minute parcel update check...');
     await checkAllParcelsAndNotify(telegramBot);
 });
 
