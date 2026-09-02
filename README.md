@@ -1,3 +1,13 @@
+---
+title: Unified Mail Tracker
+emoji: 📦
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Unified International Mail & BD Post Tracker
 
 A unified parcel tracking system and Telegram Bot combining pre-customs international logistics (**ParcelsApp**, **AliExpress**, **Cainiao**) and post-customs domestic delivery (**Bangladesh Post IPS**) into a single, merged timeline.

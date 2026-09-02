@@ -9,7 +9,7 @@ const { getAllParcels, addOrUpdateParcel, deleteParcel } = require('./services/d
 const { initTelegramBot, checkAllParcelsAndNotify } = require('./bot/telegram');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7860;
 
 app.use(cors());
 app.use(express.json());
@@ -27,7 +27,7 @@ cron.schedule('*/15 * * * *', async () => {
 });
 
 // Health check endpoint for Cloud / Railway monitoring
-app.get('/health', (req, res) => res.status(200).send('OK'));
+app.get(['/health', '/ping', '/api/health'], (req, res) => res.status(200).send('OK'));
 
 // 24/7 Keep-Alive ping to prevent cloud servers (like Render) from sleeping
 const appUrl = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;

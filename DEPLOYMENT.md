@@ -48,13 +48,42 @@ Run the app on your server/computer and route it securely through Cloudflare on 
    cloudflared tunnel --url http://localhost:3000
    ```
 
-### Option B: 24/7 Free Cloud Hosting (Render / Railway / Koyeb)
-1. Push to GitHub Private Repository (Step 2 above).
-2. Go to **[Render.com](https://render.com)** or **[Railway.app](https://railway.app)**.
-3. Select **New Web Service** -> Connect your private GitHub repository `unified-mail-tracker`.
-4. Set Build & Start Commands:
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-5. Add Environment Variable:
-   - `TELEGRAM_BOT_TOKEN` = `your_bot_token_from_botfather`
-6. Click **Deploy**. Render/Railway will host your live site 24/7 with a free SSL domain!
+### Option B: 24/7 Free Hosting on Hugging Face Spaces (Recommended - 16 GB RAM, 0 Hours Limit)
+
+Hugging Face Spaces provides **2 vCPU, 16 GB RAM** and **unlimited runtime** for free Docker apps:
+
+1. Go to **[huggingface.co/new-space](https://huggingface.co/new-space)**.
+2. Space settings:
+   - **Space name**: `unified-mail-tracker` (or your choice)
+   - **License**: `mit` (or choose open source)
+   - **Select the Space SDK**: **Docker** -> choose **Blank**
+   - **Space Hardware**: **CPU Basic (2 vCPU · 16 GB RAM · Free)**
+   - **Visibility**: **Public** (recommended for free hosting) or **Private**
+3. Add Environment Variable / Secret:
+   - Go to **Settings** > **Variables and secrets**
+   - Add **New Secret**:
+     - Name: `TELEGRAM_BOT_TOKEN`
+     - Value: `your_bot_token_from_botfather`
+4. Connect GitHub or push your repository:
+   - **Method A (Git Push to Space)**:
+     ```bash
+     git remote add space https://huggingface.co/spaces/<your-hf-username>/unified-mail-tracker
+     git push space main
+     ```
+   - **Method B (GitHub Action)**: Sync automatically from GitHub to Hugging Face on every commit.
+5. Hugging Face will automatically build your Docker container, start Chromium headless scraping, and launch your bot + web dashboard on port `7860`!
+
+### Option C: Cloudflare Tunnel (Local PC / Server)
+Run the app on your server/computer and route it securely through Cloudflare on your own domain:
+1. Install `cloudflared`: `winget install Cloudflare.cloudflared`
+2. Authenticate: `cloudflared tunnel login`
+3. Expose port 3000 to your Cloudflare domain:
+   ```bash
+   cloudflared tunnel --url http://localhost:3000
+   ```
+
+### Option D: Render.com / Railway
+1. Push to GitHub.
+2. Create **New Web Service** and connect repository.
+3. Build command: `npm install`, Start command: `npm start`.
+
