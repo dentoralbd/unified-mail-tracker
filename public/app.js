@@ -159,9 +159,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnRefreshWatchlist.addEventListener('click', async () => {
         btnRefreshWatchlist.innerText = 'Refreshing...';
-        await fetch('/api/refresh', { method: 'POST' });
-        await fetchWatchlist();
-        btnRefreshWatchlist.innerText = '🔄 Refresh All Parcels';
+        btnRefreshWatchlist.disabled = true;
+        try {
+            await fetch('/api/refresh', { method: 'POST' });
+            await fetchWatchlist();
+        } catch (e) {
+            alert('Failed to refresh watchlist: ' + e.message);
+        } finally {
+            btnRefreshWatchlist.disabled = false;
+            btnRefreshWatchlist.innerText = '🔄 Refresh All Parcels';
+        }
     });
 
     // Telegram modal controls
@@ -318,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.padding = '12px 16px';
             card.style.display = 'flex';
             card.style.alignItems = 'center';
-            card.style.justifySpaceBetween = 'space-between';
+            card.style.justifyContent = 'space-between';
             card.style.gap = '12px';
 
             card.innerHTML = `

@@ -109,10 +109,32 @@ function getParcel(trackingId) {
     return parcels.find(p => p.trackingId === cleanId || p.id === cleanId);
 }
 
+/**
+ * Update specific fields of an existing parcel without overwriting concurrent additions/deletions
+ * @param {string} trackingId
+ * @param {Object} updates
+ * @returns {Object|null} updated parcel
+ */
+function updateParcelState(trackingId, updates) {
+    const cleanId = trackingId.trim().toUpperCase();
+    const parcels = getAllParcels();
+    const index = parcels.findIndex(p => p.trackingId === cleanId);
+    if (index < 0) return null;
+
+    parcels[index] = {
+        ...parcels[index],
+        ...updates,
+        updatedAt: new Date().toISOString()
+    };
+    saveAllParcels(parcels);
+    return parcels[index];
+}
+
 module.exports = {
     getAllParcels,
     addOrUpdateParcel,
     deleteParcel,
     getParcel,
-    saveAllParcels
+    saveAllParcels,
+    updateParcelState
 };

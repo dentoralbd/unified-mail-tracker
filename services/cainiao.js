@@ -90,6 +90,7 @@ async function fetchCainiaoTracking(trackingId) {
 
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
+                if (/^last updated\s*:/i.test(line)) continue;
                 // Match dates like 2026-08-05 20:42:09 GMT+6 or 2026-07-28 22:17:44
                 const dateMatch = line.match(/\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/);
                 if (dateMatch) {

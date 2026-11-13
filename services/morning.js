@@ -16,7 +16,8 @@ async function fetchMorningGlobalTracking(trackingId) {
 
     console.log(`[MorningGlobal] Querying Morning Global API for MG package: ${cleanId}`);
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
             const formData = new URLSearchParams();
             formData.append('ydh_list', cleanId);
@@ -62,9 +63,12 @@ async function fetchMorningGlobalTracking(trackingId) {
                     events
                 };
             }
+
+            // API responded cleanly with no tracking record found
+            return { found: false, source: 'Morning Global', events: [] };
         } catch (err) {
-            console.error(`[MorningGlobal] Attempt ${attempt}/2 failed for ${cleanId}: ${err.message}`);
-            if (attempt === 2) {
+            console.error(`[MorningGlobal] Attempt ${attempt}/${maxAttempts} failed for ${cleanId}: ${err.message}`);
+            if (attempt >= maxAttempts) {
                 return { found: false, source: 'Morning Global', error: err.message, events: [] };
             }
             await new Promise(r => setTimeout(r, 1000));

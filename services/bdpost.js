@@ -86,6 +86,18 @@ async function fetchBDPostTracking(itemId) {
             }
         });
 
+        // Sort newest-first (BD Post IPS table is typically chronological ascending)
+        events.sort((a, b) => {
+            const toTs = (s) => {
+                const m = String(s || '').match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+                if (m) {
+                    return new Date(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T${(m[4] || '00').padStart(2, '0')}:${(m[5] || '00').padStart(2, '0')}:${(m[6] || '00').padStart(2, '0')}`).getTime() || 0;
+                }
+                return new Date(s).getTime() || 0;
+            };
+            return toTs(b.date) - toTs(a.date);
+        });
+
         return {
             found: events.length > 0,
             source: 'BD Post IPS',

@@ -125,6 +125,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
     // Determine package stage & status text dynamically from latest overall merged event
     let currentStage = 'SHIPPED';
     let statusText = 'Item shipped by seller. Awaiting transit checkpoints.';
+    let statusBadge = 'badge-secondary';
     let isBDCustomsCleared = false;
     let progressPercentage = 20;
 
@@ -136,35 +137,41 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
         if (topStatus.includes('DELIVERED') || topLoc.includes('DELIVERED')) {
             currentStage = 'DELIVERED';
             statusText = `Delivered: ${topEv.details || topEv.status}`;
+            statusBadge = 'badge-success';
             progressPercentage = 100;
             isBDCustomsCleared = true;
         } else if (topStatus.includes('OUT FOR DELIVERY') || topStatus.includes('HANDED OVER') || topLoc.includes('SORTING') || topLoc.includes('POST OFFICE') || topLoc.includes('AIRPORT')) {
             currentStage = 'BD_POST_SORTING';
             statusText = `Out for Local Delivery / Sorting: ${topEv.details || topEv.status}`;
+            statusBadge = 'badge-primary';
             progressPercentage = 75;
             isBDCustomsCleared = true;
         } else if (topStatus.includes('CUSTOMS CLEARED') || topStatus.includes('CLEARANCE COMPLETE')) {
             currentStage = 'ARRIVED_BD';
             statusText = `BD Customs Cleared: ${topEv.details || topEv.status}`;
+            statusBadge = 'badge-info';
             progressPercentage = 60;
             isBDCustomsCleared = true;
         } else if (topStatus.includes('CUSTOMS') || topStatus.includes('CLEARANCE') || topLoc.includes('CUSTOMS')) {
             currentStage = 'CUSTOMS';
             statusText = `Under inspection at Customs: ${topEv.details || topEv.status}`;
+            statusBadge = 'badge-warning';
             progressPercentage = 50;
         } else {
             currentStage = 'INTL_TRANSIT';
             statusText = `In International Transit: ${topEv.details || topEv.status}`;
+            statusBadge = 'badge-info';
             progressPercentage = 35;
         }
     }
 
-    return {
+    const result = {
         success: true,
         trackingId: cleanId,
         destinationTrackingId: secondaryId || null,
         currentStage,
         statusText,
+        statusBadge,
         progressPercentage,
         isBDCustomsCleared,
         sources: {
@@ -188,6 +195,7 @@ async function getUnifiedTracking(trackingId, forceRefresh = false) {
             eventsCount: bdResult.events ? bdResult.events.length : 0,
             latestLocation: bdResult.events[0] ? bdResult.events[0].location : null
         } : null,
+        latestEventTimestamp: allCleanEvents.length > 0 ? (allCleanEvents[0].timestamp || 0) : 0,
         eventsCount: allCleanEvents.length,
         events: allCleanEvents
     };
