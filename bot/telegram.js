@@ -1,6 +1,13 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { getUnifiedTracking } = require('../services/tracker');
-const { getAllParcels, addOrUpdateParcel, deleteParcel, updateParcelState } = require('../services/db');
+const {
+    getAllParcels,
+    getAllParcelsWithCloudFallback,
+    addOrUpdateParcel,
+    deleteParcel,
+    updateParcelState,
+    restoreParcelsFromCloud
+} = require('../services/db');
 
 const STALE_ALERT_MAX_AGE_DAYS = 14;
 let isCheckingParcels = false;
@@ -17,17 +24,21 @@ function buildLatestEventKey(tracking) {
     return latestEv ? `${latestEv.date || ''}|${latestEv.status || ''}` : '';
 }
 
-function syncParcelFromTracking(trackingId, tracking) {
+function syncParcelFromTracking(trackingId, tracking, minEventsCount = 0) {
     if (!tracking || !tracking.success || !tracking.eventsCount || tracking.eventsCount <= 0) {
         return null;
     }
     return updateParcelState(trackingId, {
         lastStatus: tracking.statusText,
-        eventsCount: tracking.eventsCount,
+        eventsCount: Math.max(tracking.eventsCount, minEventsCount || 0),
         currentStage: tracking.currentStage,
         latestEventKey: buildLatestEventKey(tracking),
         latestEventTimestamp: tracking.latestEventTimestamp || 0
     });
+}
+
+function isLikelyTrackingId(token) {
+    return /^(?=.*\d)[A-Z0-9-]{6,32}$/i.test(String(token || '').trim());
 }
 
 function buildTrackKeyboard(trackingId) {
@@ -86,14 +97,25 @@ function initTelegramBot(token) {
         return null;
     }
 
-    const bot = new TelegramBot(token, {
-        polling: {
-            params: {
-                allowed_updates: JSON.stringify(['message', 'callback_query'])
-            }
-        }
+    // Restore saved watchlist from Telegram cloud metadata on startup
+    restoreParcelsFromCloud(token).catch(err => {
+        console.error('[TelegramBot] Initial cloud watchlist restore warning:', err.message);
     });
+
+    const pollingOptions = {
+        params: {
+            allowed_updates: JSON.stringify(['message', 'callback_query'])
+        }
+    };
+
+    const bot = new TelegramBot(token, { polling: false });
     console.log('🚀 [TelegramBot] Unified Mail Tracker Telegram Bot starting polling (messages + callbacks)...');
+
+    bot.deleteWebHook().then(() => {
+        bot.startPolling({ polling: pollingOptions });
+    }).catch(() => {
+        bot.startPolling({ polling: pollingOptions });
+    });
 
     // Handle polling errors gracefully (suppress noisy 409 Conflict logs from duplicate instances)
     bot.on('polling_error', (error) => {
@@ -102,6 +124,16 @@ function initTelegramBot(token) {
         }
         console.error('[TelegramBot] Polling notice:', error ? (error.message || error) : 'Unknown polling error');
     });
+
+    // Watchdog to automatically revive polling if interrupted by transient network resets
+    setInterval(() => {
+        if (bot && typeof bot.isPolling === 'function' && !bot.isPolling()) {
+            console.log('⚠️ [MailTracker Watchdog] Bot polling halted. Restarting polling...');
+            bot.startPolling({ polling: pollingOptions }).catch(err => {
+                console.error('[MailTracker Watchdog Error]', err.message);
+            });
+        }
+    }, 60000);
 
     // Automatically configure Telegram Bot command menu buttons
     bot.setMyCommands([
@@ -166,25 +198,54 @@ function initTelegramBot(token) {
         }
     });
 
-    // /add <tracking_id> [label]
-    bot.onText(/\/add(?:\s+(\S+))?(?:\s+(.+))?/, async (msg, match) => {
+    // /add <tracking_id> [label] (also supports multiple comma/space-separated tracking IDs)
+    bot.onText(/\/add(?:\s+([\s\S]+))?/, async (msg, match) => {
         const chatId = msg.chat.id;
-        const trackingId = match[1];
-        const label = match[2] || '';
+        const rawArgs = (match[1] || '').trim();
 
-        if (!trackingId) {
+        if (!rawArgs) {
             return bot.sendMessage(chatId, '❌ Usage: <code>/add &lt;tracking_id&gt; [label]</code>\nExample: <code>/add UG251083645MV Smart Watch</code>', { parse_mode: 'HTML' });
         }
 
+        const tokens = rawArgs.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
+        const allAreTrackingIds = tokens.length > 1 && tokens.every(isLikelyTrackingId);
+
+        if (allAreTrackingIds) {
+            const savedList = [];
+            for (const id of tokens) {
+                const saved = addOrUpdateParcel({ trackingId: id, label: '', chatId });
+                savedList.push(saved);
+                getUnifiedTracking(saved.trackingId)
+                    .then(current => syncParcelFromTracking(saved.trackingId, current))
+                    .catch(() => {});
+            }
+            const codes = savedList.map(s => `<code>${escapeHtml(s.trackingId)}</code>`).join(', ');
+            return bot.sendMessage(
+                chatId,
+                `✅ Saved ${savedList.length} parcels (${codes}) to your watchlist.\nYou will receive automatic alerts whenever new tracking updates appear!`,
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        const firstSpaceIdx = rawArgs.search(/\s/);
+        const trackingId = (firstSpaceIdx === -1 ? rawArgs : rawArgs.slice(0, firstSpaceIdx)).replace(/,+$/, '');
+        const label = firstSpaceIdx === -1 ? '' : rawArgs.slice(firstSpaceIdx + 1).trim();
+
         const saved = addOrUpdateParcel({ trackingId, label, chatId });
-        bot.sendMessage(chatId, `✅ Saved parcel <code>${escapeHtml(saved.trackingId)}</code> (${escapeHtml(saved.label)}) to your watch list.\n` +
+        await bot.sendMessage(chatId, `✅ Saved parcel <code>${escapeHtml(saved.trackingId)}</code> (${escapeHtml(saved.label)}) to your watch list.\n` +
             `You will receive automatic alerts whenever new tracking updates appear!`, { parse_mode: 'HTML' });
+
+        // Sync baseline status in background so /list immediately shows real status
+        getUnifiedTracking(saved.trackingId)
+            .then(current => syncParcelFromTracking(saved.trackingId, current))
+            .catch(() => {});
     });
 
     // /list
-    bot.onText(/\/list/, (msg) => {
+    bot.onText(/\/list/, async (msg) => {
         const chatId = msg.chat.id;
-        const parcels = getAllParcels().filter(p => p.chatIds && p.chatIds.some(id => String(id) === String(chatId)));
+        const allParcels = await getAllParcelsWithCloudFallback();
+        const parcels = allParcels.filter(p => p.chatIds && p.chatIds.some(id => String(id) === String(chatId)));
 
         if (parcels.length === 0) {
             return bot.sendMessage(chatId, '📭 You have no saved parcels in your watchlist.\nAdd one using <code>/add &lt;tracking_id&gt; [label]</code>', { parse_mode: 'HTML' });
@@ -244,20 +305,19 @@ function initTelegramBot(token) {
 
                 const saved = addOrUpdateParcel({ trackingId: trkId, chatId });
                 await bot.answerCallbackQuery(query.id, { text: `Saved ${saved.trackingId} to Watchlist!` }).catch(() => {});
-
-                // Sync cached tracking snapshot if available so /list shows real status immediately
-                try {
-                    const current = await getUnifiedTracking(saved.trackingId);
-                    syncParcelFromTracking(saved.trackingId, current);
-                } catch (_) {}
-
                 await bot.sendMessage(chatId, `✅ <code>${escapeHtml(saved.trackingId)}</code> added to watchlist.`, { parse_mode: 'HTML' });
+
+                // Sync cached tracking snapshot asynchronously so confirmation is never delayed
+                getUnifiedTracking(saved.trackingId)
+                    .then(current => syncParcelFromTracking(saved.trackingId, current))
+                    .catch(() => {});
             } else if (data.startsWith('refresh_')) {
                 const trkId = data.slice(8).trim().toUpperCase();
                 await bot.answerCallbackQuery(query.id, { text: `Checking ${trkId}...` }).catch(() => {});
 
                 try {
                     const updated = await getUnifiedTracking(trkId);
+                    syncParcelFromTracking(trkId, updated);
                     const text = formatTrackingResponse(updated);
                     const replyMarkup = buildTrackKeyboard(updated.trackingId || trkId);
                     await bot.sendMessage(chatId, text, {
@@ -298,7 +358,7 @@ async function checkAllParcelsAndNotify(bot) {
         return;
     }
 
-    const parcels = getAllParcels();
+    const parcels = await getAllParcelsWithCloudFallback();
     if (parcels.length === 0) return;
 
     isCheckingParcels = true;
@@ -314,33 +374,39 @@ async function checkAllParcelsAndNotify(bot) {
             try {
                 const tracking = await getUnifiedTracking(p.trackingId, true);
 
-                // Never overwrite state or send alerts on empty/failed scrapes or event count regressions
+                // Never overwrite state or send alerts on empty/failed scrapes
                 if (!tracking || !tracking.success || !tracking.eventsCount || tracking.eventsCount <= 0) {
                     console.log(`[ScheduledTask] No events returned for ${p.trackingId}; keeping existing state.`);
                     continue;
                 }
 
-                if (tracking.eventsCount < (p.eventsCount || 0)) {
-                    console.log(`[ScheduledTask] Event count dropped for ${p.trackingId} (${tracking.eventsCount} < ${p.eventsCount}); skipping transient regression.`);
+                const prevEventsCount = p.eventsCount || 0;
+                const prevLatestTs = p.latestEventTimestamp || 0;
+                const latestTs = tracking.latestEventTimestamp || 0;
+                const hasNewerTimestamp = latestTs > 0 && prevLatestTs > 0 && latestTs > prevLatestTs;
+
+                // Only skip event count drops if there is no newer event timestamp
+                if (tracking.eventsCount < prevEventsCount && !hasNewerTimestamp) {
+                    console.log(`[ScheduledTask] Event count dropped for ${p.trackingId} (${tracking.eventsCount} < ${prevEventsCount}); skipping transient regression.`);
                     continue;
                 }
 
                 const latestEventKey = buildLatestEventKey(tracking);
-                const hasNewEvents = tracking.eventsCount > (p.eventsCount || 0);
-                const isStageChanged = tracking.currentStage !== p.currentStage;
+                const hasNewEvents = tracking.eventsCount > prevEventsCount;
+                const isStageChanged = Boolean(p.currentStage) && p.currentStage !== 'REGISTERED' && tracking.currentStage !== p.currentStage;
                 const isLatestEventChanged = Boolean(latestEventKey) && latestEventKey !== (p.latestEventKey || '');
                 const isNewStatus = tracking.statusText !== p.lastStatus;
 
-                if (hasNewEvents || isStageChanged || isLatestEventChanged || isNewStatus) {
-                    const latestTs = tracking.latestEventTimestamp || 0;
+                if (hasNewEvents || hasNewerTimestamp || isStageChanged || isLatestEventChanged || isNewStatus) {
+                    const isInitialBaselineSync = prevEventsCount === 0 && (!p.latestEventKey || p.lastStatus === 'Initial registration');
                     const eventAgeDays = latestTs > 0 ? (Date.now() - latestTs) / (1000 * 60 * 60 * 24) : 0;
-                    const isStaleHistory = eventAgeDays > STALE_ALERT_MAX_AGE_DAYS;
+                    const isStaleInitialHistory = isInitialBaselineSync && (eventAgeDays > STALE_ALERT_MAX_AGE_DAYS || tracking.currentStage === 'DELIVERED');
 
                     // Update only this parcel in DB so concurrent /add or callback additions aren't overwritten
-                    syncParcelFromTracking(p.trackingId, tracking);
+                    syncParcelFromTracking(p.trackingId, tracking, prevEventsCount);
 
-                    if (isStaleHistory) {
-                        console.log(`[ScheduledTask] Synced stale history for ${p.trackingId} (${Math.round(eventAgeDays)}d old) silently without sending Telegram alert.`);
+                    if (isStaleInitialHistory) {
+                        console.log(`[ScheduledTask] Synced initial stale/delivered baseline for ${p.trackingId} (${Math.round(eventAgeDays)}d old) silently.`);
                         continue;
                     }
 
@@ -363,6 +429,9 @@ async function checkAllParcelsAndNotify(bot) {
             } catch (e) {
                 console.error(`Error checking update for ${p.trackingId}:`, e.message);
             }
+
+            // Brief pause between parcels so headless Chromium memory is reclaimed cleanly on 512MB RAM
+            await new Promise(r => setTimeout(r, 1500));
         }
     } finally {
         isCheckingParcels = false;

@@ -5,7 +5,7 @@ const path = require('path');
 const cron = require('node-cron');
 
 const { getUnifiedTracking } = require('./services/tracker');
-const { getAllParcels, addOrUpdateParcel, deleteParcel } = require('./services/db');
+const { getAllParcels, getAllParcelsWithCloudFallback, addOrUpdateParcel, deleteParcel } = require('./services/db');
 const { initTelegramBot, checkAllParcelsAndNotify } = require('./bot/telegram');
 
 const app = express();
@@ -62,9 +62,9 @@ app.get('/api/track/:id', async (req, res) => {
 });
 
 // 2. Get saved parcels list
-app.get('/api/parcels', (req, res) => {
+app.get('/api/parcels', async (req, res) => {
     try {
-        const parcels = getAllParcels();
+        const parcels = await getAllParcelsWithCloudFallback();
         res.json({ success: true, parcels });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
